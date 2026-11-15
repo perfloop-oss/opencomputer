@@ -567,18 +567,14 @@ export default function Agent() {
     // body inside an envelope, wrapped in a 200. A caller reading `ok` off the
     // outer response sees success on a request that failed, and a caller
     // reading .json() gets the envelope instead of the payload.
+    let envelope = {
+      status: 403,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ error: { message: "Insufficient Permission" } }),
+    };
     globalThis.fetch = (async (url: string, init: RequestInit) => {
       calls.push({ url: String(url), init });
-      return new Response(
-        JSON.stringify({
-          status: 403,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            error: { message: "Insufficient Permission" },
-          }),
-        }),
-        { status: 200 },
-      );
+      return Response.json(envelope);
     }) as unknown as typeof globalThis.fetch;
     let unwrapped: Response | undefined;
     let linearResponse: Response | undefined;
@@ -596,13 +592,32 @@ export default function Agent() {
         path: "/graphql",
         body: JSON.stringify({ query: "query { viewer { id } }" }),
       });
+      assert.equal(calls.length, 2);
+      for (const [status, body] of [
+        [204, null],
+        [205, null],
+        [304, null],
+        [200, ""],
+        [404, ""],
+      ] as const) {
+        envelope = { ...envelope, status, body: body ?? "" };
+        const response = await runtime.callService({
+          service: "gmail",
+          path: "/messages",
+        });
+        const expected = new Response(body, { status, headers: envelope.headers });
+        assert.equal(response.status, expected.status);
+        assert.equal(response.ok, expected.ok);
+        assert.deepEqual([...response.headers], [...expected.headers]);
+        assert.equal(response.body === null, expected.body === null);
+        assert.equal(await response.text(), await expected.text());
+      }
     } finally {
       globalThis.fetch = realFetch;
       delete globalThis.process.env.OPENCOMPUTER_CONNECTIONS_URL;
       delete globalThis.process.env.OPENCOMPUTER_CONNECTION_TOKEN;
     }
 
-    assert.equal(calls.length, 2);
     // A trailing slash on the base must not produce a doubled one — the fix for
     // the comment bug replaced a regex trim, so the behaviour needs pinning.
     assert.equal(calls[0]!.url, "https://edge.test/conn/google/fetch");

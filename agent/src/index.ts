@@ -953,7 +953,11 @@ async function unwrapServiceResponse(response: Response): Promise<Response> {
           ),
         )
       : {};
-  return new Response(envelope.body, { status: envelope.status, headers });
+  const body =
+    envelope.status === 204 || envelope.status === 205 || envelope.status === 304
+      ? null
+      : envelope.body;
+  return new Response(body, { status: envelope.status, headers });
 }
 
 /** A service account the platform holds a credential for, as listed. */

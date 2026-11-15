@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ASK_TOOL,
   bearer,
+  callService,
   defineConnection,
   defineMemory,
   defineTool,
@@ -19,6 +20,41 @@ import {
 } from "./index.js";
 
 const HOOKS = Symbol.for("opencomputer.agent-hooks");
+
+test("callService preserves upstream status, headers, and body", async (t) => {
+  const base = process.env.OPENCOMPUTER_CONNECTIONS_URL;
+  const token = process.env.OPENCOMPUTER_CONNECTION_TOKEN;
+  process.env.OPENCOMPUTER_CONNECTIONS_URL = "https://connections.example.test";
+  process.env.OPENCOMPUTER_CONNECTION_TOKEN = "test-token";
+  try {
+    for (const [status, body] of [
+      [204, null],
+      [205, null],
+      [304, null],
+      [200, ""],
+      [200, "ok"],
+      [404, ""],
+      [404, "missing"],
+    ] as const) {
+      const headers = { "x-upstream": "preserved", etag: '"revision"' };
+      t.mock.method(globalThis, "fetch", async () =>
+        Response.json({ status, headers, body: body ?? "" }),
+      );
+      const response = await callService({ service: "gmail", path: "/messages" });
+      const expected = new Response(body, { status, headers });
+      assert.equal(response.status, expected.status);
+      assert.equal(response.ok, expected.ok);
+      assert.deepEqual([...response.headers], [...expected.headers]);
+      assert.equal(response.body === null, expected.body === null);
+      assert.equal(await response.text(), await expected.text());
+    }
+  } finally {
+    if (base === undefined) delete process.env.OPENCOMPUTER_CONNECTIONS_URL;
+    else process.env.OPENCOMPUTER_CONNECTIONS_URL = base;
+    if (token === undefined) delete process.env.OPENCOMPUTER_CONNECTION_TOKEN;
+    else process.env.OPENCOMPUTER_CONNECTION_TOKEN = token;
+  }
+});
 
 test("githubApp defines a frozen managed connection permission subset", () => {
   const provider = githubApp({

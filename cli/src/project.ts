@@ -3317,7 +3317,8 @@ export const callService = async (request) => {
   for (const [name, value] of Object.entries(envelope.headers || {})) {
     if (typeof value === "string") headers[name] = value;
   }
-  return new Response(envelope.body, { status: envelope.status, headers });
+  const body = envelope.status === 204 || envelope.status === 205 || envelope.status === 304 ? null : envelope.body;
+  return new Response(body, { status: envelope.status, headers });
 };
 
 export const listServices = async (options = {}) => {
